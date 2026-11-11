@@ -1,0 +1,7 @@
+# Allowlist: never send environments, local model copies, or personal photos.
+**
+!Dockerfile
+!requirements-container.txt
+!download_models.py
+!app.py
+!verify.py

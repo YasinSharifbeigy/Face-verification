@@ -1,0 +1,31 @@
+services:
+  face-verification:
+    build: .
+    image: face-verification:local
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      FACE_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
+
+  download-models:
+    build: .
+    image: face-verification:local
+    platform: linux/amd64
+    profiles: [tools]
+    user: "0:0"
+    environment:
+      FACE_DEVICE: cpu
+    volumes:
+      - ./models:/app/models
+    command: ["python", "download_models.py"]

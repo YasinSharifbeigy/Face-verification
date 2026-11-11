@@ -1,0 +1,48 @@
+﻿# Local Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Downloaded models, dependencies, and reference sources
+models/
+wheels/
+vendor/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+cache-constraints.txt
+
+# Machine-specific Windows package snapshot (contains a local wheel URL)
+requirements-lock.txt
+
+# Local samples and personal photographs (case-insensitive extensions)
+samples/
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[wW][eE][bB][pP]
+*.[bB][mM][pP]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+
+# Local secrets; sanitized templates may be committed
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Editor/OS files and runtime logs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,11 @@
+# Linux Python 3.12; CUDA 12.8/cuDNN 9 come from the Docker base image.
+insightface==2.1
+onnxruntime-gpu==1.23.2
+numpy==2.5.4
+onnx==1.23.2
+opencv-python==5.0.0.93
+scikit-image==0.26.0
+fastapi==0.162.2
+uvicorn==0.54.0
+python-multipart==0.0.33
+huggingface-hub==2.4.0
