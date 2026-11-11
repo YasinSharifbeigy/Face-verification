@@ -1,4 +1,4 @@
-# Linux Python 3.12; CUDA 12.8/cuDNN 9 come from the Docker base image.
+# Linux Python 3.12; Docker separately installs torch==2.11.0 from its cu128 index.
 insightface==2.1
 onnxruntime-gpu==1.23.2
 numpy==2.5.4

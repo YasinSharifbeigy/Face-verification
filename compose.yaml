@@ -1,6 +1,9 @@
 services:
   face-verification:
-    build: .
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-public.ecr.aws/docker/library/python:3.12-slim-bookworm}
     image: face-verification:local
     platform: linux/amd64
     ports:
@@ -19,7 +22,10 @@ services:
     restart: unless-stopped
 
   download-models:
-    build: .
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-public.ecr.aws/docker/library/python:3.12-slim-bookworm}
     image: face-verification:local
     platform: linux/amd64
     profiles: [tools]

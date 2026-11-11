@@ -29,7 +29,7 @@ Sources: [official implementation](https://github.com/bytedance/LVFace), [offici
 | Recognition checkpoint | Approximately 434 MiB on disk; runtime allocations also require memory |
 | CPU mode | Available without a GPU, with slower recognition |
 
-The memory observation came from sampling total GPU usage with `nvidia-smi` before and during inference. Other workloads were running, so it is an approximate increment, not an isolated process peak or a proven minimum. **4 GiB is conservative planning guidance, not a tested minimum.** Container/Linux memory consumption has not been measured. Leave headroom for other processes and startup allocations; 24 GiB is not required by this service. More workers create additional model sessions and can increase VRAM consumption.
+The memory observation came from sampling total GPU usage with `nvidia-smi` before and during inference. Other workloads were running, so it is an approximate increment, not an isolated process peak or a proven minimum. **4 GiB is conservative planning guidance, not a tested minimum.** Container/Linux memory consumption, including the new PyTorch runtime import, has not been measured; revalidate the budget on the deployment host. Leave headroom for other processes and startup allocations; 24 GiB is not required by this service. More workers create additional model sessions and can increase VRAM consumption.
 
 ## GitHub and clone-directory layout
 
@@ -52,6 +52,40 @@ No local Python installation is required for the Docker download command. Altern
 
 The local Windows Python environment remains at `<repository-clone>/.venv/`. Docker's Linux Python environment stays at `/opt/venv` inside the image; a Windows `.venv` cannot be shared with a Linux container. Teammates do not need to create `.venv` when using Docker.
 
+## Updating the team deployment from GitHub
+
+This version uses a Python base image from Amazon ECR Public and installs
+PyTorch's CUDA 12.8 runtime from its official wheel index. It does not use an
+NVIDIA CUDA container image. Push all related source/configuration changes
+together so the Dockerfile, runtime loading, and Compose settings stay aligned.
+
+On the development machine, review and publish the changes:
+
+```powershell
+git diff --check
+git add Dockerfile compose.yaml compose.cpu.yaml requirements-container.txt verify.py README.md
+git diff --cached --stat
+git commit -m "Use PyTorch cu128 runtime for Docker deployment"
+git push origin main
+```
+
+On the other machine, run these commands from the repository clone:
+
+```powershell
+git pull --ff-only origin main
+docker compose run --rm --build download-models
+docker compose up -d --force-recreate face-verification
+docker compose logs -f face-verification
+```
+
+If Git refuses to pull because of local Dockerfile edits, preserve or commit
+those edits before retrying; do not discard work blindly. The updated file
+already replaces the old NVIDIA-image configuration. Existing valid files in
+`models/` are reused, so do not delete that folder or the Docker cache as part
+of the update. The first build with PyTorch cu128 still downloads the new GPU
+runtime packages, which can take time. Once started, check
+http://localhost:8000/health and http://localhost:8000/docs.
+
 ## Docker quick start (GPU)
 
 Requirements:
@@ -68,7 +102,7 @@ docker compose up -d face-verification
 docker compose logs -f face-verification
 ```
 
-The first command builds the application image and downloads the official LVFace-B checkpoint and SCRFD detector (approximately 451 MiB combined) into **`models/` in your cloned repository**, verifying both SHA256 hashes. Existing valid files are reused. The API mounts that folder at `/app/models` **read-only**; weights are not embedded in the image, and neither image building nor API startup downloads them. Rebuilds reuse the same host files. The base image supplies CUDA 12.8 and cuDNN 9; no host Python environment, Windows DLLs, or local photos are copied into the image. The API container runs as a non-root user. The one-off downloader runs as root to initialize the bind-mounted directory and exits when finished; it does not need GPU access.
+The first command builds the application image and downloads the official LVFace-B checkpoint and SCRFD detector (approximately 451 MiB combined) into **`models/` in your cloned repository**, verifying both SHA256 hashes. Existing valid files are reused. The API mounts that folder at `/app/models` **read-only**; weights are not embedded in the image, and neither image building nor API startup downloads them. Rebuilds reuse the same host files. The Python base image comes from Amazon ECR Public; PyTorch CUDA 12.8 wheels supply CUDA/cuDNN runtime libraries; no host Python environment, Windows DLLs, or local photos are copied into the image. The API container runs as a non-root user. The one-off downloader runs as root to initialize the bind-mounted directory and exits when finished; it does not need GPU access.
 
 - Interactive documentation: http://localhost:8000/docs
 - Health: http://localhost:8000/health
@@ -236,7 +270,7 @@ python download_models.py
 python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-Set `FACE_DEVICE=cpu` to run the API on CPU. The existing Windows environment has local CUDA DLLs in `.venv/cuda`, copied from a cached PyTorch 2.11.0+cu128 distribution with its LICENSE and NOTICE retained. These DLLs are excluded from Docker; the Linux image uses its own runtime libraries. `requirements-lock.txt` is a historical Windows snapshot containing a local wheel URL; use `requirements-container.txt` for Docker.
+Set `FACE_DEVICE=cpu` to run the API on CPU. The existing Windows environment has local CUDA DLLs in `.venv/cuda`, copied from a cached PyTorch 2.11.0+cu128 distribution with its LICENSE and NOTICE retained. These DLLs are excluded from Docker; the Linux image uses PyTorch-provided CUDA runtime libraries. `requirements-lock.txt` is a historical Windows snapshot containing a local wheel URL; use `requirements-container.txt` for Docker.
 
 ## Validation and current limits
 
@@ -256,3 +290,67 @@ There is no authentication, rate limiting, liveness/spoof detection, or automate
 ## Model licensing
 
 The LVFace model card is tagged MIT, but the official repository README restricts downloaded models to **non-commercial research**. Treat the weights as research-only pending clarification from the authors. InsightFace pretrained SCRFD weights also have non-commercial research restrictions. Source-code licenses do not override model-weight terms. Do not assume this image is cleared for commercial deployment or unrestricted redistribution.
+
+## CUDA runtime from PyTorch (no NVIDIA container image)
+
+The Docker build uses `public.ecr.aws/docker/library/python:3.12-slim-bookworm`
+as its Python base image and installs:
+
+```bash
+pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+```
+
+This installs a CUDA 12.8 build of PyTorch with its required GPU runtime
+libraries. It does not install the full CUDA toolkit/compiler (`nvcc`). The
+build asserts `torch.version.cuda == "12.8"` without requiring a GPU during
+building. The service imports PyTorch before creating the ONNX Runtime CUDA
+session so ONNX Runtime can reuse compatible CUDA/cuDNN libraries. Recognition
+still uses the LVFace-B ONNX checkpoint; it has not switched to a PyTorch model.
+No torchvision or torchaudio packages are needed.
+
+The default build does not pull NVIDIA container images or use NVIDIA's
+container registry. It also avoids Docker Hub by using the Python image mirror
+on Amazon ECR Public, whose Linux amd64 manifest was checked. PyTorch's GPU
+runtime dependencies are still NVIDIA-authored software distributed as Python
+wheels; this change removes the NVIDIA container-image dependency, not the need
+for CUDA libraries or a host NVIDIA driver. Expect multi-gigabyte dependency
+downloads on the first build. Image layers cache them for later builds.
+
+References: [official PyTorch installation versions](https://pytorch.org/get-started/previous-versions/),
+[ONNX Runtime integration with PyTorch libraries](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#compatibility-with-pytorch).
+
+## Troubleshooting downloads and registries
+
+Update the repository, then rebuild and download models:
+
+```powershell
+docker compose run --rm --build download-models
+docker compose up -d --force-recreate face-verification
+```
+
+Do not restore the old `# syntax=docker/dockerfile:1` directive or CUDA-image
+`FROM` line: those trigger the registry downloads that previously returned 403.
+The old `CUDA_IMAGE` override is no longer used.
+
+Test the new base-image registry separately:
+
+```powershell
+docker pull public.ecr.aws/docker/library/python:3.12-slim-bookworm
+```
+
+If your team has another approved Python 3.12 Debian Bookworm image mirror, set
+`PYTHON_IMAGE` before running Compose. For example, on a host where Docker Hub
+works:
+
+```powershell
+$env:PYTHON_IMAGE = "python:3.12-slim-bookworm"
+docker compose run --rm --build download-models
+```
+
+Direct builds accept `docker build --build-arg PYTHON_IMAGE=<image-reference> .`.
+The host must reach the Python image registry, Debian package repositories,
+PyPI, PyTorch's wheel host, and Hugging Face for the separate model download.
+If access fails, check the relevant registry/package host and Docker Desktop's
+proxy settings. Merely changing PowerShell proxy variables may not configure
+Docker Desktop's image-pull traffic. A 403 alone does not identify which proxy,
+registry policy, or network gateway caused it.

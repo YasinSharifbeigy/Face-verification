@@ -1,24 +1,29 @@
-# syntax=docker/dockerfile:1
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
+ARG PYTHON_IMAGE=public.ecr.aws/docker/library/python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:${PATH}" \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     FACE_DEVICE=cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv ca-certificates libgl1 libglib2.0-0 libgomp1 \
+      ca-certificates libgl1 libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
-    && python3 -m venv /opt/venv
+    && python -m venv /opt/venv
 
 WORKDIR /app
 COPY requirements-container.txt ./
-# InsightFace also installs CPU ORT; remove it and restore GPU ORT's shared files.
-# CUDA/cuDNN are supplied by the base image, not platform-specific local DLLs.
+# InsightFace pulls CPU ORT too; restore the GPU distribution's shared files.
 RUN pip install --no-cache-dir -r requirements-container.txt \
     && pip uninstall -y onnxruntime \
     && pip install --no-cache-dir --force-reinstall --no-deps onnxruntime-gpu==1.23.2
+
+# Runtime libraries come from the official PyTorch CUDA 12.8 wheel index.
+# No NVIDIA CUDA container image or full CUDA compiler toolkit is installed.
+RUN pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128 \
+    && python -c "import torch; assert torch.version.cuda == '12.8', torch.__version__"
 
 COPY download_models.py ./
 COPY app.py verify.py ./

@@ -1,5 +1,6 @@
 """LVFace-B face verification. Run with --help for CLI usage."""
 import argparse
+import importlib.util
 import json
 import math
 from pathlib import Path
@@ -16,6 +17,11 @@ ROOT = Path(__file__).resolve().parent
 class FaceVerifier:
     def __init__(self, device="cuda"):
         if device == "cuda":
+            # Importing a CUDA-enabled PyTorch build loads its runtime libraries
+            # before ONNX Runtime creates the CUDA session. Local environments
+            # without torch can still use installed CUDA wheels or local DLLs.
+            if importlib.util.find_spec("torch") is not None:
+                importlib.import_module("torch")
             local_runtime = ROOT / ".venv/cuda"
             ort.preload_dlls(directory=str(local_runtime) if local_runtime.exists() else None)
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if device == "cuda" else ["CPUExecutionProvider"]
